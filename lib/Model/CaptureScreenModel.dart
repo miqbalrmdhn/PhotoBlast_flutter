@@ -3,16 +3,16 @@ import 'package:flutter/material.dart';
 
 class CameraModel with ChangeNotifier {
   List<File> _capturedImages = [];
-  File? _currentImage;
   int _interval = 0;
 
   List<File> get capturedImages => _capturedImages;
-  File? get currentImage => _currentImage;
   int get interval => _interval;
 
-  void captureImage(File image) {
-    _currentImage = image;
-    _capturedImages.add(image);
+  void addImage(File image) {
+    _capturedImages.insert(0, image); // menambahkan gambar terbaru di awal
+    if (_capturedImages.length > 3) {
+      _capturedImages = _capturedImages.sublist(0, 3); // menyimpan maksimal 3 gambar
+    }
     notifyListeners();
   }
 

@@ -1,143 +1,147 @@
 import 'package:flutter/material.dart';
-import 'package:camera/camera.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart';
-import 'dart:io';
+import 'package:provider/provider.dart';
 import 'package:photoblastflutter/Model/CaptureScreenModel.dart';
+import '../Services/CameraControlService.dart';
 
 class CaptureScreenView extends StatefulWidget {
+  final CameraControllerService cameraService;
+
+  const CaptureScreenView({super.key, required this.cameraService});
+
   @override
-  _CaptureViewState createState() => _CaptureViewState();
+  _CaptureScreenViewState createState() => _CaptureScreenViewState();
 }
 
-class _CaptureViewState extends State<CaptureScreenView> {
-  late CameraController _cameraController;
-  late CameraModel _cameraModel;
-  late List<CameraDescription> _cameras;
-
-  late Future<void> _initializeControllerFuture;
-
+class _CaptureScreenViewState extends State<CaptureScreenView> {
   @override
-  void initState() {
-    super.initState();
-    _cameraModel = CameraModel();
-    _initializeCamera();
+  void dispose() {
+    widget.cameraService.dispose(); // Properly dispose of the camera service
+    super.dispose();
   }
-
-  Future<void> _initializeCamera() async {
-    _cameras = await availableCameras();
-    _cameraController = CameraController(_cameras[0], ResolutionPreset.high);
-    _initializeControllerFuture = _cameraController.initialize();
-  }
-
   @override
   Widget build(BuildContext context) {
+    final cameraModel = Provider.of<CameraModel>(context);
     return Scaffold(
-      body: Stack(
+      appBar: AppBar(
+        title: Text('PhotoBlast!'),
+        backgroundColor: Colors.grey[200],
+        foregroundColor: Colors.green,
+      ),
+      body: Row(
         children: [
-          FutureBuilder(
-            future: _initializeControllerFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.done) {
-                return CameraPreview(_cameraController);
-              } else {
-                return const Center(child: CircularProgressIndicator());
-              }
-            },
+          // Left Column - Display Last Captured Image
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: cameraModel.capturedImages
+                  .map((file) => Container(
+                margin: EdgeInsets.all(8),
+                child: Image.file(file, height: 100, width: 100),
+              ))
+                  .toList(),
+            ),
           ),
-          Positioned(
-            top: 0,
-            left: 0,
-            child: Container(
-              margin: EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  Row(
+
+          // Middle Column - Camera Preview
+          Expanded(
+            flex: 2,
+            child: FutureBuilder(
+              future: widget.cameraService.initializeControllerFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.done) {
+                  return widget.cameraService.cameraPreview;
+                } else {
+                  return const Center(child: CircularProgressIndicator());
+                }
+              },
+            ),
+          ),
+
+          // Right Column - Control Buttons
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Timer Button
+                ElevatedButton(
+                  onPressed: () {
+                    _setTimerInterval(context, cameraModel);
+                  },
+                  child: Column(
                     children: [
-                      Expanded(
-                        child: GridView.builder(
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3,
-                            childAspectRatio: 1,
-                            crossAxisSpacing: 10,
-                            mainAxisSpacing: 10,
-                          ),
-                          itemCount: _cameraModel.capturedImages.length,
-                          itemBuilder: (context, index) {
-                            return Image.file(_cameraModel.capturedImages[index]);
-                          },
-                        ),
-                      ),
-                      SizedBox(width: 16),
-                      Column(
-                        children: [
-                          ElevatedButton(
-                            onPressed: () async {
-                              try {
-                                await _initializeControllerFuture;
-                                final path = join(
-                                  (await getApplicationDocumentsDirectory()).path,
-                                  '${DateTime.now()}.png',
-                                );
-                                await _cameraController.takePicture();
-                                _cameraModel.captureImage(File(path));
-                              } catch (e) {
-                                print(e);
-                              }
-                            },
-                            child: Icon(Icons.camera),
-                            style: ElevatedButton.styleFrom(
-                              shape: CircleBorder(),
-                              padding: EdgeInsets.all(16),
-                            ),
-                          ),
-                          SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: () {
-                              showDialog(
-                                context: context,
-                                builder: (context) {
-                                  return AlertDialog(
-                                    title: Text('Set Interval'),
-                                    content: TextField(
-                                      keyboardType: TextInputType.number,
-                                      decoration: InputDecoration(
-                                        labelText: 'Interval (seconds)',
-                                      ),
-                                      onChanged: (value) {
-                                        _cameraModel.setInterval(int.parse(value));
-                                      },
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () {
-                                          Navigator.of(context).pop();
-                                        },
-                                        child: Text('Cancel'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () {
-                                          Navigator.of(context).pop();
-                                        },
-                                        child: Text('OK'),
-                                      ),
-                                    ],
-                                  );
-                                },
-                              );
-                            },
-                            child: Icon(Icons.timer),
-                          ),
-                        ],
-                      ),
+                      Icon(Icons.timer),
+                      Text('${cameraModel.interval}s'),
                     ],
                   ),
-                ],
-              ),
+                ),
+                SizedBox(height: 20),
+
+                // Capture Image Button
+                ElevatedButton(
+                  onPressed: () async {
+                    final image = await widget.cameraService.takePicture();
+                    cameraModel.addImage(image);
+                  },
+                  child: Icon(Icons.camera_alt),
+                ),
+                SizedBox(height: 20),
+
+                // Capture 5 Images Automatically Button
+                ElevatedButton(
+                  onPressed: () async {
+                    await widget.cameraService.takePicturesWithInterval(
+                      CameraModel(),
+                      5,
+                      cameraModel.interval,
+                    );
+                  },
+                  child: Column(
+                    children: [
+                      Icon(Icons.camera),
+                      Text('5x'),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  // Function to set timer interval
+  void _setTimerInterval(BuildContext context, CameraModel model) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        int? interval;
+        return AlertDialog(
+          title: Text('Set Timer Interval'),
+          content: TextField(
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: 'Interval (seconds)',
+            ),
+            onChanged: (value) {
+              interval = int.tryParse(value);
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                if (interval != null) model.setInterval(interval!);
+                Navigator.of(context).pop();
+              },
+              child: Text('OK'),
+            ),
+          ],
+        );
+      },
     );
   }
 }
